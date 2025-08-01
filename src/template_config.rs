@@ -207,6 +207,8 @@ pub fn parse_config_from_yaml_string(yaml: &str) -> Result<TemplateConfig, Confi
                         None => return Err(ConfigParseError::NoOutputType),
                     };
 
+                    config.set_output_type(output_type);
+
                     // - Output filename/directory
                     let output_mapping = match mapping.get(&YamlOwned::Value(ScalarOwned::String(CONFIG_KEY_OUTPUT_TOP_LEVEL.to_string()))) {
                         Some(owned_val) => {
@@ -360,3 +362,143 @@ pub fn parse_config_from_file<P: AsRef<Path>>(path: &P) -> Result<TemplateConfig
     }
 }
 
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    const SIMPLE_FILE_CONFIG: &str = "
+    type: file
+    output:
+      filename: test.rs
+    include: template.rs
+    ";
+
+    const SIMPLE_DIRECTORY_CONFIG: &str = r#"
+    type: directory
+    output:
+      directory: test-dir
+    include: "*.rs"
+    "#;
+
+    #[test]
+    pub fn parse_config_works_for_file_type_templates() {
+        let config_res = parse_config_from_yaml_string(SIMPLE_FILE_CONFIG);
+        assert!(config_res.is_ok());
+        
+        let config = config_res.unwrap();
+        assert_eq!(config.get_output_type(), TemplateOutputType::File, "output type not parsed as File");
+        assert_eq!(config.get_output_filename(), Some("test.rs"), "output filename not parsed correctly");
+        assert_eq!(config.get_output_directory(), None, "output directory should not be set for File output type");
+    }
+
+    #[test]
+    pub fn parse_config_works_for_directory_type_templates() {
+        let config_res = parse_config_from_yaml_string(SIMPLE_DIRECTORY_CONFIG);
+        assert!(config_res.is_ok());
+        
+        let config = config_res.unwrap();
+        assert_eq!(config.get_output_type(), TemplateOutputType::Directory, "output type not parsed as Directory");
+        assert_eq!(config.get_output_filename(), None, "output filename should be set for Directory output type");
+        assert_eq!(config.get_output_directory(), Some("test-dir"), "output directory not parsed correctly");
+    }
+
+    #[test]
+    pub fn config_set_output_type_works() {
+        let mut config = TemplateConfig::new();
+
+        // Baseline default values
+        assert_eq!(config.get_output_type(), TemplateOutputType::File);
+        assert_eq!(config.get_output_filename(), None);
+        assert_eq!(config.get_output_directory(), None);
+
+        let output_name = "abcd";
+
+        // Set the output filename so we can verify that it gets wiped on type change
+        config.set_output_filename((&output_name).to_string());
+        assert_eq!(config.get_output_filename(), Some(output_name));
+        assert_eq!(config.get_output_directory(), None);
+
+        // Call the set function, but don't change the type
+        config.set_output_type(TemplateOutputType::File);
+        assert_eq!(config.get_output_type(), TemplateOutputType::File);
+        // -- The output filename should not change since the type didn't change
+        assert_eq!(config.get_output_filename(), Some(output_name));
+        assert_eq!(config.get_output_directory(), None);
+
+        // Change the type
+        config.set_output_type(TemplateOutputType::Directory);
+        assert_eq!(config.get_output_type(), TemplateOutputType::Directory);
+        assert_eq!(config.get_output_filename(), None, "output filename should be wiped when type changes from File to Directory");
+        assert_eq!(config.get_output_directory(), None);
+
+        // Set the output directory so we can verify it gets wiped on type change
+        config.set_output_directory((&output_name).to_string());
+        assert_eq!(config.get_output_filename(), None);
+        assert_eq!(config.get_output_directory(), Some(output_name));
+
+        // Call the set function, but don't change the type
+        config.set_output_type(TemplateOutputType::Directory);
+        assert_eq!(config.get_output_type(), TemplateOutputType::Directory);
+        assert_eq!(config.get_output_filename(), None);
+        // -- The output directory should not change since the type didn't change
+        assert_eq!(config.get_output_directory(), Some(output_name));
+
+        // Change the type
+        config.set_output_type(TemplateOutputType::File);
+        assert_eq!(config.get_output_type(), TemplateOutputType::File);
+        assert_eq!(config.get_output_filename(), None);
+        assert_eq!(config.get_output_directory(), None, "output directory should be wiped when type changes from Directory to File");
+    }
+
+    #[test]
+    pub fn config_set_output_filename_works() {
+        let mut config = TemplateConfig::new();
+
+        // Baseline default values
+        assert_eq!(config.get_output_type(), TemplateOutputType::File);
+        assert_eq!(config.get_output_filename(), None);
+        assert_eq!(config.get_output_directory(), None);
+
+        let output_name = "abcd";
+
+        // Since the current output type is File, the output filename should be updated
+        config.set_output_filename((&output_name).to_string());
+        assert_eq!(config.get_output_filename(), Some(output_name));
+
+        // Change the type
+        config.set_output_type(TemplateOutputType::Directory);
+        assert_eq!(config.get_output_type(), TemplateOutputType::Directory);
+        assert_eq!(config.get_output_filename(), None, "output filename should be wiped when type changes from File to Directory");
+
+        // Since the current output type is Directory, the output filename should not be updated
+        config.set_output_filename((&output_name).to_string());
+        assert_eq!(config.get_output_filename(), None);
+    }
+
+    #[test]
+    pub fn config_set_output_directory_works() {
+        let mut config = TemplateConfig::new();
+
+        // Baseline default values
+        assert_eq!(config.get_output_type(), TemplateOutputType::File);
+        assert_eq!(config.get_output_filename(), None);
+        assert_eq!(config.get_output_directory(), None);
+
+        config.set_output_type(TemplateOutputType::Directory);
+
+        let output_name = "abcd";
+
+        // Since the current output type is Directory, the output filename should be updated
+        config.set_output_directory((&output_name).to_string());
+        assert_eq!(config.get_output_directory(), Some(output_name));
+
+        // Change the type
+        config.set_output_type(TemplateOutputType::File);
+        assert_eq!(config.get_output_directory(), None, "output directory should be wiped when type changes from Directory to File");
+
+        // Since the current output type is File, the output filename should not be updated
+        config.set_output_directory((&output_name).to_string());
+        assert_eq!(config.get_output_directory(), None);
+    }
+}
