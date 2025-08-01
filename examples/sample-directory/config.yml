@@ -1,0 +1,7 @@
+type: "directory"
+include: "*.rs"
+output:
+  directory: "sample-output"
+variables:
+  test_var: abcd
+  similar: 1234
