@@ -1,0 +1,7 @@
+type: file
+include: template.rs
+output:
+  filename: script.rs
+variables:
+  test_var: abcd
+  similar: 1234

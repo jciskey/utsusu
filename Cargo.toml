@@ -4,3 +4,6 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+globset = "0.4.16"
+saphyr = "0.0.6"
+tera = "1.20.0"
