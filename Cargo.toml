@@ -4,6 +4,14 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+clap = { version = "4.5.42", features = ["env"] }
+directories = "6.0.0"
 globset = "0.4.16"
 saphyr = "0.0.6"
 tera = "1.20.0"
+
+[[bin]]
+name = "utsusu"
+path = "src/bin/utsusu-cli/main.rs"
+test = false
+bench = false
