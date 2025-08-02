@@ -28,6 +28,27 @@ const CONFIG_FILE_ENV_NAME: &str = "UTSUSU_CONFIG_FILE";
 const TEMPLATES_DIR_ENV_NAME: &str = "UTSUSU_TEMPLATES_DIR";
 
 pub fn main() {
+    let project_dirs_opt = ProjectDirs::from("", "", "utsusu");
+
+    let (default_config_file_path, default_template_dir_path) = match &project_dirs_opt {
+        Some(project_dirs) => {
+            let default_config_file_path = project_dirs.config_dir().join(DEFAULT_CONFIG_FILE).to_path_buf();
+            let default_template_dir_path = project_dirs.data_dir().join(DEFAULT_TEMPLATE_DIR).to_path_buf();
+            (default_config_file_path, default_template_dir_path)
+        },
+        None => (PathBuf::default(), PathBuf::default()),
+    };
+
+    let empty_pathbuf = PathBuf::default();
+
+    let help_string_default_config_file_path = if default_config_file_path != empty_pathbuf {
+        format!(" [default: {}]", default_config_file_path.display())
+    } else { String::new() };
+
+    let help_string_default_template_dir_path = if default_template_dir_path != empty_pathbuf {
+        format!(" [default: {}]", default_template_dir_path.display())
+    } else { String::new() };
+
     let cli = Command::new("utsusu")
         .version(env!("CARGO_PKG_VERSION"))
         .about("A straightforward template rendering binary")
@@ -38,7 +59,7 @@ pub fn main() {
 				.required(false)
                 .env(CONFIG_FILE_ENV_NAME)
 				.value_name("CONFIG_FILE")
-				.help("Path to the configuration file to use")
+				.help(format!("Path to the configuration file to use{}", help_string_default_config_file_path))
 		)
         .arg(
             Arg::new(TEMPLATES_DIR_PARAM_NAME)
@@ -47,7 +68,7 @@ pub fn main() {
 				.required(false)
                 .env(TEMPLATES_DIR_ENV_NAME)
 				.value_name("TEMPLATES_DIR")
-				.help("Path to the directory containing templates to render")
+				.help(format!("Path to the directory containing templates to render{}", help_string_default_template_dir_path))
 		)
         .arg(
             Arg::new(TEMPLATE_NAME_PARAM_NAME)
@@ -58,14 +79,12 @@ pub fn main() {
 
     let matches = cli.get_matches();
 
-    let project_dirs_opt = ProjectDirs::from("", "", "utsusu");
-
     let utsusu_config_file_path = match matches.get_one::<String>(CONFIG_FILE_PARAM_NAME) {
         Some(path_str) => PathBuf::from(path_str),
         None => {
             // Fall-back to default config file path (if available)
             if let Some(project_dirs) = &project_dirs_opt {
-                project_dirs.config_dir().join(DEFAULT_CONFIG_FILE).to_path_buf()
+                default_config_file_path
             } else {
                 // Can't find the file, error and tell the user to explicitly specify the config
                 // file path
@@ -84,7 +103,7 @@ pub fn main() {
 
             // Fall-back to default templates directory path (if available)
             if let Some(project_dirs) = project_dirs_opt {
-                project_dirs.data_dir().join(DEFAULT_TEMPLATE_DIR).to_path_buf()
+                default_template_dir_path
             } else {
                 // Can't find the templates directory path, error and tell the user to explicitly specify the templates
                 // directory path
