@@ -28,8 +28,19 @@ Specific use-cases:
 ## Similar Projects
 
 - Cookiecutter is a Python tool that does this for directories.
-- stamp-cli is a Rust CLI tool that also does this for directories.
-- Hugo (the static site generator) provides the ability to template out individual pages according to the type of page it is, but does not allow you to generate subdirectories via template.
+- `stamp-cli` is a Rust CLI tool that also does this for directories.
+- Hugo (the static site generator) provides the ability to template out individual pages according to the type of content it is, but does not allow you to generate subdirectories via template.
 
 The first two are focused on directories, and do not let you stamp out individual files separate from a directory. To do that, you generally have to directly invoke a templating library such as Jinja2, Tera, or something else. The latter is focused on letting you easily generate new individual pages, but doesn't allow you to generate a directory from a template if you have a standard format for different sections of your site (how much of a pain this is is entirely up to the site you're building).
 
+## Usage
+
+To see full usage instructions of the CLI, run `utsusu --help`.
+
+Example usage:
+
+```bash
+utsusu --templates-dir examples utsusu-template
+```
+
+Sample configurations can be found in the examples directory. The `utsusu-template` example will produce a simple single-file template that you can work off of to get started.
