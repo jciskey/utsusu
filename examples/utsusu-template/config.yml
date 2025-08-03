@@ -1,0 +1,6 @@
+type: "directory"
+include: "*"
+output:
+  directory: "{{ template_name }}"
+variables:
+  template_name: "new-utsusu-template"

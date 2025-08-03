@@ -1,0 +1,7 @@
+type: "file"
+include: "file.md"
+output:
+  filename: "file.md"
+variables:
+  a_variable: "default-value"
+  another_variable: 12345

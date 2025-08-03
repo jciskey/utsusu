@@ -30,13 +30,13 @@ const TEMPLATES_DIR_ENV_NAME: &str = "UTSUSU_TEMPLATES_DIR";
 pub fn main() {
     let project_dirs_opt = ProjectDirs::from("", "", "utsusu");
 
-    let (default_config_file_path, default_template_dir_path) = match &project_dirs_opt {
+    let (default_config_file_path, default_template_dir_path, project_dirs_available) = match &project_dirs_opt {
         Some(project_dirs) => {
             let default_config_file_path = project_dirs.config_dir().join(DEFAULT_CONFIG_FILE).to_path_buf();
             let default_template_dir_path = project_dirs.data_dir().join(DEFAULT_TEMPLATE_DIR).to_path_buf();
-            (default_config_file_path, default_template_dir_path)
+            (default_config_file_path, default_template_dir_path, true)
         },
-        None => (PathBuf::default(), PathBuf::default()),
+        None => (PathBuf::default(), PathBuf::default(), false),
     };
 
     let empty_pathbuf = PathBuf::default();
@@ -79,11 +79,11 @@ pub fn main() {
 
     let matches = cli.get_matches();
 
-    let utsusu_config_file_path = match matches.get_one::<String>(CONFIG_FILE_PARAM_NAME) {
+    let _utsusu_config_file_path = match matches.get_one::<String>(CONFIG_FILE_PARAM_NAME) {
         Some(path_str) => PathBuf::from(path_str),
         None => {
             // Fall-back to default config file path (if available)
-            if let Some(project_dirs) = &project_dirs_opt {
+            if project_dirs_available {
                 default_config_file_path
             } else {
                 // Can't find the file, error and tell the user to explicitly specify the config
@@ -102,7 +102,7 @@ pub fn main() {
             // TODO: If the user provided a config file, we can try reading that for the relevant data
 
             // Fall-back to default templates directory path (if available)
-            if let Some(project_dirs) = project_dirs_opt {
+            if project_dirs_available {
                 default_template_dir_path
             } else {
                 // Can't find the templates directory path, error and tell the user to explicitly specify the templates
@@ -202,25 +202,49 @@ pub fn main() {
                 },
                 Ok(tera) => {
                     let template_source_file_path = &template_files_to_render[0]; // Safety: Due to previous checks, this will always have exactly 1 element
-                    let output_file_path = user_output_filename.or_else(|| template_config.get_output_filename().and_then(|s| Some(s.to_string()))).unwrap_or(String::new());
-                    match render_single_file(&tera, &template_config, &template_source_file_path.display().to_string(), Some(&user_variables_context)) {
+
+                    // Render out the final file path, in case the user named something using a
+                    // variable
+                    let output_file_path_raw = user_output_filename.or_else(|| template_config.get_output_filename().and_then(|s| Some(s.to_string()))).unwrap_or(String::new());
+                    let mut full_context = template_config.get_render_context();
+                    full_context.extend(user_variables_context.clone());
+                    match tera::Tera::one_off(&output_file_path_raw, &full_context, true) {
                         Err(tera_error) => {
-                            println!("Error rendering template file: {}", tera_error);
-                            println!("Source file: {}", template_source_file_path.display());
-                            println!("All template files: {:?}", template_files_to_render);
-                            println!("Registered templates: {:?}", tera.get_template_names().collect::<Vec<_>>());
-                            exit(-6);
+                            println!("Error rendering path '{}': {}", output_file_path_raw, tera_error);
+                            exit(-9);
                         },
-                        Ok(rendered_string) => {
-                            // Write the rendered string to the output file
-                            let write_res = std::fs::write(&output_file_path, rendered_string);
-                            if write_res.is_err() {
-                                println!("Error writing rendered file: {}", write_res.unwrap_err());
-                                exit(-7);
-                            } else {
-                                println!("Template written to '{}'", output_file_path);
-                                exit(0);
-                            }
+                        Ok(output_file_path) => {
+                            match render_single_file(&tera, &template_config, &template_source_file_path.display().to_string(), Some(&user_variables_context)) {
+                                Err(tera_error) => {
+                                    println!("Error rendering template file: {}", tera_error);
+                                    println!("Source file: {}", template_source_file_path.display());
+                                    //println!("All template files: {:?}", template_files_to_render);
+                                    //println!("Registered templates: {:?}", tera.get_template_names().collect::<Vec<_>>());
+                                    exit(-6);
+                                },
+                                Ok(rendered_string) => {
+                                    // Write the rendered string to the output file
+                                    // -- Ensure the parent directories exist
+                                    if let Some(final_directory) = PathBuf::from(&output_file_path).parent() {
+                                        if !final_directory.exists() {
+                                            if let Err(mkdir_error) = std::fs::create_dir_all(final_directory) {
+                                                println!("Error creating directories for file '{}': {}", output_file_path, mkdir_error);
+                                                exit(-10);
+                                            }
+                                        }
+                                    }
+
+                                    // -- Write the rendered file
+                                    let write_res = std::fs::write(&output_file_path, rendered_string);
+                                    if write_res.is_err() {
+                                        println!("Error writing rendered file: {}", write_res.unwrap_err());
+                                        exit(-7);
+                                    } else {
+                                        println!("Template written to '{}'", output_file_path);
+                                        exit(0);
+                                    }
+                                },
+                            };
                         },
                     };
                 },
@@ -233,43 +257,84 @@ pub fn main() {
                     exit(-4);
                 },
                 Ok(tera) => {
-                    // Create the output directory
-                    let output_directory_path = PathBuf::from(user_output_directory.or_else(|| template_config.get_output_directory().and_then(|s| Some(s.to_string()))).unwrap_or(String::new()));
-                    if let Err(fs_error) = std::fs::create_dir(&output_directory_path) {
-                        println!("Error creating output directory: {}", fs_error);
-                        exit(-8);
-                    }
+                    // Render out the output directory path, in case the user named something using a
+                    // variable
+                    let output_directory_path_raw = PathBuf::from(user_output_directory.or_else(|| template_config.get_output_directory().and_then(|s| Some(s.to_string()))).unwrap_or(String::new()));
+                    let mut full_context = template_config.get_render_context();
+                    full_context.extend(user_variables_context.clone());
+                    match tera::Tera::one_off(&output_directory_path_raw.display().to_string(), &full_context, true) {
+                        Err(tera_error) => {
+                            println!("Error rendering path '{}': {}", output_directory_path_raw.display(), tera_error);
+                            exit(-9);
+                        },
+                        Ok(output_directory_path_string) => {
+                            let output_directory_path = PathBuf::from(output_directory_path_string);
 
-                    // Render all the files to the output directory
-                    let total_template_files = template_files_to_render.len();
-                    let mut total_template_files_written = 0;
-                    for template_source_file_path in &template_files_to_render {
-                        if let Ok(files_dir_relative_filename) = template_source_file_path.strip_prefix(&template_files_path) {
-                            let output_file_path = output_directory_path.join(files_dir_relative_filename);
-                            match render_single_file(&tera, &template_config, &template_source_file_path.display().to_string(), Some(&user_variables_context)) {
-                                Err(tera_error) => {
-                                    println!("Error rendering template file: {}", tera_error);
-                                    println!("Source file: {}", template_source_file_path.display());
-                                    println!("All template files: {:?}", template_files_to_render);
-                                    println!("Registered templates: {:?}", tera.get_template_names().collect::<Vec<_>>());
-                                    exit(-6);
-                                },
-                                Ok(rendered_string) => {
-                                    // Write the rendered string to the output file
-                                    let write_res = std::fs::write(&output_file_path, rendered_string);
-                                    if write_res.is_err() {
-                                        println!("Error writing rendered file: {}", write_res.unwrap_err());
-                                        println!("Output file path: {}", output_file_path.display());
-                                        exit(-7);
-                                    } else {
-                                        total_template_files_written += 1;
+                            // Create the output directory
+                            // -- Verify it doesn't already exist
+                            if output_directory_path.exists() {
+                                println!("Error: Directory already exists");
+                                exit(-11);
+                            }
+
+                            // -- Create the directory (and all parent directories)
+                            if let Err(fs_error) = std::fs::create_dir_all(&output_directory_path) {
+                                println!("Error creating output directory: {}", fs_error);
+                                exit(-8);
+                            }
+
+                            // Render all the files to the output directory
+                            let total_template_files = template_files_to_render.len();
+                            let mut total_template_files_written = 0;
+                            for template_source_file_path in &template_files_to_render {
+                                if let Ok(files_dir_relative_filename) = template_source_file_path.strip_prefix(&template_files_path) {
+                                    let output_file_path_raw = output_directory_path.join(files_dir_relative_filename);
+                                    match tera::Tera::one_off(&output_file_path_raw.display().to_string(), &full_context, true) {
+                                        Err(tera_error) => {
+                                            println!("Error rendering path '{}': {}", output_file_path_raw.display(), tera_error);
+                                            exit(-9);
+                                        },
+                                        Ok(output_file_path_string) => {
+                                            let output_file_path = PathBuf::from(output_file_path_string);
+                                            match render_single_file(&tera, &template_config, &template_source_file_path.display().to_string(), Some(&user_variables_context)) {
+                                                Err(tera_error) => {
+                                                    println!("Error rendering template file: {}", tera_error);
+                                                    println!("Source file: {}", template_source_file_path.display());
+                                                    println!("All template files: {:?}", template_files_to_render);
+                                                    println!("Registered templates: {:?}", tera.get_template_names().collect::<Vec<_>>());
+                                                    exit(-6);
+                                                },
+                                                Ok(rendered_string) => {
+                                                    // Write the rendered string to the output file
+                                                    // -- Ensure the parent directories exist
+                                                    if let Some(final_directory) = PathBuf::from(&output_file_path).parent() {
+                                                        if !final_directory.exists() {
+                                                            if let Err(mkdir_error) = std::fs::create_dir_all(final_directory) {
+                                                                println!("Error creating directories for file '{}': {}", output_file_path.display(), mkdir_error);
+                                                                exit(-10);
+                                                            }
+                                                        }
+                                                    }
+
+                                                    // -- Write the rendered file
+                                                    let write_res = std::fs::write(&output_file_path, rendered_string);
+                                                    if write_res.is_err() {
+                                                        println!("Error writing rendered file: {}", write_res.unwrap_err());
+                                                        println!("Output file path: {}", output_file_path.display());
+                                                        exit(-7);
+                                                    } else {
+                                                        total_template_files_written += 1;
+                                                    }
+                                                },
+                                            };
+                                        }
                                     }
-                                },
-                            };
+                                }
+                            }
+                            println!("{}/{} files written to '{}'", total_template_files_written, total_template_files, output_directory_path.display());
+                            exit(0);
                         }
                     }
-                    println!("{}/{} files written to '{}'", total_template_files_written, total_template_files, output_directory_path.display());
-                    exit(0);
                 },
             };
         },
